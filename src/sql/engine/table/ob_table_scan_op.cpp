@@ -4092,7 +4092,6 @@ int ObTableScanOp::fetch_next_fts_index_rows()
 int ObTableScanOp::fill_generated_fts_cols(blocksstable::ObDatumRow *row)
 {
   int ret = OB_SUCCESS;
-  const ObObjDatumMapType *types = MY_SPEC.is_fts_index_aux_ ? ObFTIndexRowCache::FTS_INDEX_TYPES : ObFTIndexRowCache::FTS_DOC_WORD_TYPES;
   const ObExprOperatorType *expr_types = MY_SPEC.is_fts_index_aux_ ? ObFTIndexRowCache::FTS_INDEX_EXPR_TYPE : ObFTIndexRowCache::FTS_DOC_WORD_EXPR_TYPE;
   if (OB_ISNULL(row)) {
     ret = OB_INVALID_ARGUMENT;
@@ -4106,9 +4105,21 @@ int ObTableScanOp::fill_generated_fts_cols(blocksstable::ObDatumRow *row)
       } else {
         ObDatum &datum = expr->locate_datum_for_write(eval_ctx_);
         ObEvalInfo &eval_info = expr->get_eval_info(eval_ctx_);
-        if (OB_FAIL(datum.from_storage_datum(row->storage_datums_[i], types[i]))) {
-          LOG_WARN("fail to fill fulltext index row", K(ret), K(i), K(MY_SPEC.output_), KPC(row));
+        const ObDatum &storage_datum = row->storage_datums_[i];
+        if (OB_UNLIKELY(storage_datum.is_ext())) {
+          ret = OB_INVALID_ARGUMENT;
+          LOG_WARN("unexpected ext datum in generated fulltext row", K(ret), K(i), K(storage_datum));
         } else {
+          // Generated full-text rows have two string columns followed by two
+          // uint64 columns.  Avoid the generic storage-datum conversion on
+          // every emitted token while preserving its null handling.
+          if (storage_datum.is_null()) {
+            datum.set_null();
+          } else if (i < 2) {
+            datum.set_datum(storage_datum);
+          } else {
+            datum.set_uint(storage_datum.get_uint());
+          }
           eval_info.evaluated_ = true;
           eval_info.projected_ = true;
         }

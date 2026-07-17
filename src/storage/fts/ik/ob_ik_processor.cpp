@@ -43,7 +43,19 @@ int ObIIKProcessor::process(TokenizeContext &ctx)
     if (OB_ITER_END != ret) {
       LOG_WARN("fail to get current char and type", K(ret));
     }
-  } else if (OB_FAIL(do_process(ctx, ch, char_len, type))) {
+  } else {
+    ret = process(ctx, ch, char_len, type);
+  }
+  return ret;
+}
+
+int ObIIKProcessor::process(TokenizeContext &ctx,
+                            const char *ch,
+                            const uint8_t char_len,
+                            const ObFTCharUtil::CharType type)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(do_process(ctx, ch, char_len, type))) {
     LOG_WARN("Failed to do process char", K(ret));
   }
   return ret;

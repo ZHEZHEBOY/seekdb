@@ -16,6 +16,8 @@
 
 #define USING_LOG_PREFIX STORAGE_FTS
 
+#include <cstdint>
+
 #include "storage/fts/ob_beng_ft_parser.h"
 #include "storage/fts/ob_fts_struct.h"
 
@@ -54,16 +56,29 @@ int ObBEngFTParser::get_next_token(
   } else if (OB_ISNULL(token.ptr_) || OB_UNLIKELY(0 >= token.len_ || 0 >= token_freq)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid arguments", K(ret), KP(token.ptr_), K(token.len_), K(token_freq));
-  } else if (OB_ISNULL(buf = static_cast<char *>(scratch_allocator_.alloc(token.len_)))) {
-    ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to allocate word memory", K(ret), K(token.len_));
   } else {
-    MEMCPY(buf, token.ptr_, token.len_);
-    word = buf;
-    word_len = token.len_;
-    char_len = token.len_;
-    word_freq = token_freq;
-    LOG_DEBUG("succeed to add word", K(ObString(word_len, word)), K(word_freq));
+    const std::uintptr_t doc_begin = reinterpret_cast<std::uintptr_t>(doc_.ptr_);
+    const std::uintptr_t token_begin = reinterpret_cast<std::uintptr_t>(token.ptr_);
+    const bool token_in_doc = token_begin >= doc_begin
+        && token.len_ <= doc_.len_
+        && token_begin - doc_begin <= doc_.len_ - token.len_;
+    // Unchanged ASCII tokens point into the source document and need no copy.
+    // Normalized tokens belong to the analyzer and must retain the old scratch lifetime.
+    if (token_in_doc) {
+      word = token.ptr_;
+    } else if (OB_ISNULL(buf = static_cast<char *>(scratch_allocator_.alloc(token.len_)))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WARN("fail to allocate word memory", K(ret), K(token.len_));
+    } else {
+      MEMCPY(buf, token.ptr_, token.len_);
+      word = buf;
+    }
+    if (OB_SUCC(ret)) {
+      word_len = token.len_;
+      char_len = token.len_;
+      word_freq = token_freq;
+      LOG_DEBUG("succeed to add word", K(ObString(word_len, word)), K(word_freq));
+    }
   }
   return ret;
 }
